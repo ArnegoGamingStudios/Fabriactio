@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fabricatio - Sandbox Game</title>
+    <title>Fabricatio - Biomes Update</title>
     <style>
         @font-face {
             font-family: 'ArcadeClassic';
@@ -44,38 +44,8 @@
             image-rendering: pixelated;
             margin: 0;
         }
-        #loader-code-wrap {
-            position: absolute;
-            bottom: 3vh;
-            right: 2vw;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 6px;
-            z-index: 1001;
-        }
-        #loader-code {
-            background: rgba(0, 0, 0, 0.65);
-            border: 2px solid #9a8a6a;
-            color: #ffd27a;
-            font-size: 18px;
-            padding: 6px 10px;
-            width: 150px;
-            text-align: center;
-            outline: none;
-            letter-spacing: 2px;
-        }
-        #loader-code::placeholder {
-            color: #7d745f;
-        }
-        #loader-code-hint {
-            color: #ffd27a;
-            font-size: 15px;
-            text-shadow: 0 0 6px #000;
-            display: none;
-        }
 
-        /* --- SEAN CHEAT: GIVE-ANY-ITEM MENU --- */
+        /* --- GIVE-ANY-ITEM CHEAT MENU (F9) --- */
         #give-menu {
             position: absolute;
             inset: 0;
@@ -215,6 +185,12 @@
             letter-spacing: 2px;
             user-select: none;
             pointer-events: none;
+        }
+
+        /* Multiplayer removed in V1.0.1: hide all split-screen UI */
+        #split-screen-btn,
+        #split-menu {
+            display: none !important;
         }
 
         /* --- WORLD SELECTION MENU (Alpha 2) --- */
@@ -1438,13 +1414,9 @@
     <!-- Loading Screen Overlay -->
     <div id="loader">
         <img id="loader-image" src="fabrcatio_load_screen_1.png">
-        <div id="loader-code-wrap">
-            <input id="loader-code" type="text" maxlength="8" autocomplete="off" placeholder="code">
-            <div id="loader-code-hint">cheat active: press ENTER for items</div>
-        </div>
     </div>
 
-    <!-- Sean cheat: give-any-item menu (hidden until unlocked) -->
+    <!-- Give-any-item cheat menu (F9) -->
     <div id="give-menu">
         <div id="give-title">give me stuff</div>
         <div id="give-grid"></div>
@@ -1458,7 +1430,7 @@
             <img class="menu-button-img" src="button.png" alt="">
             <span class="menu-button-text">play</span>
         </div>
-        <div id="menu-version">1.0.0</div>
+        <div id="menu-version">1.0.1</div>
     </div>
 
     <!-- World Selection Menu (Alpha 2) -->
@@ -1823,6 +1795,7 @@
         };
 
         let lavaDamageTimer = 0;
+        let fireDamageTimer = 0;
 
         const controls = new THREE.PointerLockControls(camera, document.body);
         document.addEventListener('click', () => {
@@ -2406,11 +2379,9 @@
                 albumOpen || renameOpen || structureDebugOpen || biomeDebugOpen || photoLightboxOpen || giveMenuOpen);
         }
 
-        // --- SEAN CHEAT ---
-        // Type "Sean" into the loader's code box while the game is booting and you
-        // unlock a cheat menu: press ENTER in-game to hand yourself any item, any
-        // number of times.
-        let seanMode = false;
+        // --- GIVE-ANY-ITEM CHEAT MENU ---
+        // Press F9 in-game to open a menu that hands you any item in the game,
+        // any number of times.
         let giveMenuOpen = false;
 
         function toggleGiveMenu(force) {
@@ -2443,19 +2414,6 @@
             }
         }
 
-        // If the loader on-screen code is typed during the boot screen, enable the cheat.
-        const loaderCodeInput = document.getElementById('loader-code');
-        if (loaderCodeInput) {
-            loaderCodeInput.addEventListener('input', () => {
-                if (!loaderCodeInput.value || loaderCodeInput.value.trim().length === 0) return;
-                if (loaderCodeInput.value.trim().toLowerCase() === 'sean') {
-                    seanMode = true;
-                    loaderCodeInput.value = 'SEAN';
-                    loaderCodeInput.style.borderColor = '#ffd27a';
-                    document.getElementById('loader-code-hint').style.display = 'block';
-                }
-            });
-        }
         const giveCloseBtn = document.getElementById('give-close');
         if (giveCloseBtn) giveCloseBtn.addEventListener('click', () => toggleGiveMenu(false));
 
@@ -2466,8 +2424,8 @@
             if (overlayLockActive()) return;
             // Don't hijack keys while typing in a text field (e.g. the rename box)
             if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-            // Sean cheat: ENTER flips the give-anything menu open/closed
-            if (seanMode && e.code === 'Enter') {
+            // F9 opens/closes the give-anything cheat menu (F12 is DevTools in browsers)
+            if (e.code === 'F9') {
                 e.preventDefault();
                 toggleGiveMenu();
                 return;
@@ -2944,6 +2902,7 @@
                 const tex = textureLoader.load('portal_to_hell_inside.png');
                 tex.magFilter = THREE.NearestFilter;
                 tex.minFilter = THREE.NearestFilter;
+                tex.repeat.y = 0.5; // the png holds two 16x16 frames; show one per face
                 return new THREE.MeshPhongMaterial({
                     specular: 0x000000,
                     shininess: 0,
@@ -39244,6 +39203,7 @@ f 9985 	9996 	9986
         const portalInteriors = []; // { x0, y0, z0 } frame-corner of every live portal
         let inHell = false;         // which dimension the player is standing in
         let hellEntryPoint = null;  // overworld { x, y, z } to return to
+        let lastNonPortalPos = null; // last position known to be outside a portal
         let hellLoading = false;    // pause physics while the hell chunks stream in
         let hellPortalBuilt = false; // the auto return-portal has been assembled
         let hellPadY = 1;           // solid base y of the hell landing pad
@@ -39280,6 +39240,9 @@ f 9985 	9996 	9986
                         if (!loadedChunks.has(chunkKey)) loadedChunks.set(chunkKey, []);
                         const mesh = createBlock(gx, gy, z0, 'portal_to_hell_inside', loadedChunks.get(chunkKey));
                         if (mesh) mesh.userData.playerPlaced = true;
+                        // Interior cells are part of the permanent world edit too, so a
+                        // portal survives a full page reload along with its frame.
+                        recordBlockModification(gx, gy, z0, 'portal_to_hell_inside');
                     }
                 }
             }
@@ -39320,11 +39283,42 @@ f 9985 	9996 	9986
             return liveBlockAt(gx, gy, gz) === 'portal_to_hell_inside';
         }
 
+        // Scans the original hell landing volume for a portal that already exists
+        // (player-built or restored from persistence). Returns the Y of the floor
+        // block directly under the frame, or null if nothing portal-like is there.
+        function findHellPortalY(cx, cz) {
+            let foundBaseY = null;
+            for (let x = cx - 2; x <= cx + 2; x++) {
+                for (let z = cz - 2; z <= cz + 2; z++) {
+                    for (let y = 1; y <= 24; y++) {
+                        if (liveBlockAt(x, y, z) === 'portal_to_hell_block' || liveBlockAt(x, y, z) === 'portal_to_hell_inside') {
+                            foundBaseY = y - 1;
+                            break;
+                        }
+                    }
+                    if (foundBaseY !== null) return foundBaseY;
+                }
+            }
+            return null;
+        }
+
         // Carves a small flat pad + auto-builds the return portal at the hell landing
         // zone. Called once when the player first arrives in hell (and again after a
         // page reload while inside hell).
         function buildHellSpawnPortal() {
             const cx = HELL_CENTER, cz = HELL_CENTER;
+
+            // If a hell portal (frame or interior) is already standing around the
+            // landing zone — from persistence or a rebuilt world — keep it instead of
+            // stacking a second one on top. Adopt its floor so the respawn snap still
+            // lands the player safely.
+            const existingPortalY = findHellPortalY(cx, cz);
+            if (existingPortalY !== null) {
+                hellPadY = existingPortalY;
+                hellPortalBuilt = true;
+                return;
+            }
+
             // Find the solid ground just under the landing spot.
             let groundY = 0;
             for (let y = 24; y >= minWorldY; y--) {
@@ -39341,6 +39335,7 @@ f 9985 	9996 	9986
                     const gx = cx + dx, gz = cz + dz;
                     const existing = blockMap.get(getBlockKey(gx, groundY, gz));
                     if (existing) removeBlock(existing);
+                    recordBlockModification(gx, groundY, gz, 'cobbled_hellstone');
                     const chunkKey = getChunkKey(Math.floor(gx / chunkSize), Math.floor(gz / chunkSize));
                     if (!loadedChunks.has(chunkKey)) loadedChunks.set(chunkKey, []);
                     createBlock(gx, groundY, gz, 'cobbled_hellstone', loadedChunks.get(chunkKey));
@@ -39353,6 +39348,7 @@ f 9985 	9996 	9986
                     if (i === 0 || i === PORTAL_FRAME - 1 || j === 0 || j === PORTAL_FRAME - 1) {
                         const chunkKey = getChunkKey(Math.floor((x0 + i) / chunkSize), Math.floor(z0 / chunkSize));
                         if (!loadedChunks.has(chunkKey)) loadedChunks.set(chunkKey, []);
+                        recordBlockModification(x0 + i, y0 + j, z0, 'portal_to_hell_block');
                         const mesh = createBlock(x0 + i, y0 + j, z0, 'portal_to_hell_block', loadedChunks.get(chunkKey));
                         if (mesh) { mesh.userData.playerPlaced = true; mesh.userData.hellAuto = true; }
                     }
@@ -39366,6 +39362,9 @@ f 9985 	9996 	9986
             hellLoading = true;
             player.velocity.set(0, 0, 0);
             controls.getObject().position.copy(player.position);
+            // The arrival snap repositions the player many blocks away; forget any
+            // air time recorded before the jump so it can't become phantom fall damage.
+            peakAirY = null;
         }
 
         function goToHell() {
@@ -39385,7 +39384,11 @@ f 9985 	9996 	9986
         function switchDimension() {
             if (hellLoading) return;
             if (!inHell) {
-                hellEntryPoint = { x: player.position.x, y: player.position.y, z: player.position.z };
+                // Use the last frame where the player was outside the portal so the
+                // return trip lands them in front of it, not inside where they'd
+                // immediately trigger the portal again.
+                const exitPos = lastNonPortalPos || player.position;
+                hellEntryPoint = { x: exitPos.x, y: exitPos.y, z: exitPos.z };
                 inHell = true;
                 savePlayerPos();
                 goToHell();
@@ -39410,8 +39413,14 @@ f 9985 	9996 	9986
             }
             const px = Math.round(player.position.x / blockSize);
             const pz = Math.round(player.position.z / blockSize);
+            const py = Math.round((player.position.y - player.height) / blockSize);
+            // Remember the last spot that was clearly outside a portal so the
+            // return trip drops the player in front of it, not inside it.
+            if (!isInsidePortal(px, py, pz)) {
+                lastNonPortalPos = { x: player.position.x, y: player.position.y, z: player.position.z };
+            }
             if (isInsidePortal(px, Math.round(player.position.y / blockSize), pz)) { switchDimension(); return; }
-            if (isInsidePortal(px, Math.round((player.position.y - player.height) / blockSize), pz)) switchDimension();
+            if (isInsidePortal(px, py, pz)) switchDimension();
         }
 
         // Called every frame while hellLoading: once every needed block has been
@@ -39454,6 +39463,7 @@ f 9985 	9996 	9986
             }
             player.velocity.set(0, 0, 0);
             player.onGround = true;
+            peakAirY = null; // the dimension snap teleports the player; never count it as a fall
             hellLoading = false;
             teleportCooldown = 1.5;
         }
@@ -39809,6 +39819,9 @@ f 9985 	9996 	9986
             const chunkData = new Map();
             const startX = cx * chunkSize;
             const startZ = cz * chunkSize;
+            // A whole chunk is treated as hell (no overworld structures, curses, or
+            // fish) when its centre column lies inside the hell realm.
+            const chunkIsHell = isHellRegion(cx * chunkSize + chunkSize / 2, cz * chunkSize + chunkSize / 2);
 
             for (let x = startX; x < startX + chunkSize; x++) {
                 for (let z = startZ; z < startZ + chunkSize; z++) {
@@ -40063,9 +40076,9 @@ f 9985 	9996 	9986
                     }
 
                     if (hell) {
-                        // Hell is filled with fire: flickering flames stand on the
-                        // ground the same way dandelions do in the overworld.
-                        if (height >= seaLevel && seededCellRand(x, z, 40) < 0.35) {
+                        // Sporadic flames stand on the ground the same way dandelions
+                        // do in the overworld — spread out, not carpeted.
+                        if (height >= seaLevel && seededCellRand(x, z, 40) < 0.12) {
                             chunkData.set(getBlockKey(x, height + 1, z), 'fire');
                         }
                     } else if (isCornFields) {
@@ -40228,7 +40241,7 @@ f 9985 	9996 	9986
                 }
             }
 
-            if (!hell) stampStructures(chunkData, cx, cz);
+            if (!chunkIsHell) stampStructures(chunkData, cx, cz);
 
             if (savedWorldModifications[chunkKey]) {
                 const mods = savedWorldModifications[chunkKey];
@@ -40351,11 +40364,16 @@ f 9985 	9996 	9986
             const chunkMeshList = [];
             loadedChunks.set(chunkKey, chunkMeshList);
 
+            let queuedCount = 0;
             chunkData.forEach((matType, key) => {
+                // Cells already in the block map are persistent portal meshes that
+                // survived the chunk unload; never re-create a duplicate over them.
+                if (blockMap.has(key)) return;
                 const [x, y, z] = key.split(',').map(Number);
                 creationQueue.push({ x, y, z, matType, chunkMeshList, chunkKey });
+                queuedCount++;
             });
-            pendingBlocksPerChunk.set(chunkKey, chunkData.size);
+            pendingBlocksPerChunk.set(chunkKey, queuedCount);
 
             const spawns = pendingFishSpawns.get(chunkKey);
             if (spawns) {
@@ -40533,6 +40551,9 @@ f 9985 	9996 	9986
             if (loadedChunks.has(chunkKey)) {
                 const chunkMeshList = loadedChunks.get(chunkKey);
                 chunkMeshList.forEach(mesh => {
+                    // A hell portal is the only thing that survives leaving a chunk:
+                    // its frame and interior stay loaded so the path to hell is never lost.
+                    if (mesh.userData.materialType === 'portal_to_hell_block' || mesh.userData.materialType === 'portal_to_hell_inside') return;
                     const bKey = getBlockKey(mesh.userData.gridX, mesh.userData.gridY, mesh.userData.gridZ);
                     if (bedModels.has(bKey)) {
                         scene.remove(bedModels.get(bKey));
@@ -40777,7 +40798,7 @@ f 9985 	9996 	9986
             for (let i = 0; i < cubes.length; i++) {
                 const cube = cubes[i];
                 const cubeType = cube.userData.materialType;
-                if (cubeType === 'water' || cubeType === 'lava' || cubeType === 'dandelion' || cubeType === 'torch' || cubeType === 'unlit_torch' || cubeType === 'corn_stalk' || cubeType === 'grass_blade' || cubeType === 'walnut_fruit') continue;
+                if (cubeType === 'water' || cubeType === 'lava' || cubeType === 'dandelion' || cubeType === 'torch' || cubeType === 'unlit_torch' || cubeType === 'corn_stalk' || cubeType === 'grass_blade' || cubeType === 'walnut_fruit' || cubeType === 'fire' || cubeType === 'portal_to_hell_inside') continue;
                 const bPos = cube.position, halfB = blockSize / 2;
                 const bMin = new THREE.Vector3(bPos.x - halfB, bPos.y - halfB, bPos.z - halfB);
                 const bMax = new THREE.Vector3(bPos.x + halfB, bPos.y + halfB, bPos.z + halfB);
@@ -40799,6 +40820,17 @@ f 9985 	9996 	9986
             const headPos = new THREE.Vector3(pos.x, pos.y - (player.height * 0.5), pos.z);
             const key = getBlockKey(headPos.x / blockSize, headPos.y / blockSize, headPos.z / blockSize);
             return blockMap.has(key) && blockMap.get(key).userData.materialType === 'lava';
+        }
+
+        // Fire is a passable flame the player can walk straight through; it burns the
+        // moment the flames overlap the player's body (either at the feet or torso).
+        function checkFireTouch(pos) {
+            const headPos = new THREE.Vector3(pos.x, pos.y - (player.height * 0.5), pos.z);
+            const torsoKey = getBlockKey(headPos.x / blockSize, headPos.y / blockSize, headPos.z / blockSize);
+            if (blockMap.has(torsoKey) && blockMap.get(torsoKey).userData.materialType === 'fire') return true;
+            const feetPos = new THREE.Vector3(pos.x, pos.y - player.height + 0.01, pos.z);
+            const feetKey = getBlockKey(feetPos.x / blockSize, feetPos.y / blockSize, feetPos.z / blockSize);
+            return blockMap.has(feetKey) && blockMap.get(feetKey).userData.materialType === 'fire';
         }
 
         // --- 10. INTERACTION ---
@@ -42286,7 +42318,8 @@ f 9985 	9996 	9986
                 const c = cubes[i];
                 const t = c.userData.materialType;
                 if (t === 'water' || t === 'lava' || t === 'dandelion' || t === 'torch' ||
-                    t === 'unlit_torch' || t === 'corn_stalk' || t === 'grass_blade' || t === 'walnut_fruit') continue;
+                    t === 'unlit_torch' || t === 'corn_stalk' || t === 'grass_blade' || t === 'walnut_fruit' ||
+                    t === 'fire' || t === 'portal_to_hell_inside') continue;
                 if (pMin.x < c.position.x + half && pMax.x > c.position.x - half &&
                     pMin.y < c.position.y + half && pMax.y > c.position.y - half &&
                     pMin.z < c.position.z + half && pMax.z > c.position.z - half) return true;
@@ -42305,20 +42338,8 @@ f 9985 	9996 	9986
             try { controls.lock(); } catch (err) {}
         }
 
-        function startSplitScreen(count, p1Pad) {
-            endSplitScreen();
-            splitCount = count;
-            splitP1UsesPad = p1Pad;
-            splitMode = true;
-            for (let k = 2; k <= count; k++) splitPlayers.push(createSplitPlayer(k));
-            isMouseDown = false;
-            rightMouseHeld = false;
-            jumpRequested = false;
-            document.getElementById('crafting-menu').style.display = 'none';
-            craftingOpen = false;
-            setupSplitUI();
-            lockPointerForSplit();
-        }
+        // Multiplayer was removed in V1.0.1; split mode is permanently disabled.
+        function startSplitScreen(count, p1Pad) { return; }
 
         function endSplitScreen() {
             if (!splitMode) return;
@@ -43494,15 +43515,9 @@ f 9985 	9996 	9986
         }
 
         // --- Split screen setup menu wiring ---
-        function openSplitMenu() {
-            if (splitMenuOpen) return;
-            splitMenuOpen = true;
-            const startBtn = document.getElementById('split-start-btn');
-            if (splitMode) startBtn.textContent = 'End Split Screen';
-            else startBtn.textContent = 'Start Split Screen';
-            document.getElementById('split-menu').style.display = 'flex';
-            controls.unlock();
-        }
+        // Multiplayer was removed in V1.0.1; these entry points are inert so
+        // splitMode can never become true.
+        function openSplitMenu() { return; }
 
         function closeSplitMenu() {
             if (!splitMenuOpen) return;
@@ -43631,9 +43646,17 @@ f 9985 	9996 	9986
             materials.water.forEach(mat => { if (mat.map) mat.map.offset.x = time * 0.0005; });
             if (materials.lava && materials.lava.map) materials.lava.map.offset.x = -time * 0.001;
 
-            // Fire flicker: flip the sprite horizontally back & forth at 10 frames/sec
+            // Fire flicker: flip the sprite horizontally back & forth at 10 frames/sec.
+            // Meshes freeze their matrix on creation (matrixAutoUpdate=false), so the
+            // new scale must be applied explicitly for the flip to show.
             const fireFlip = (Math.floor(time / 100) % 2 === 0) ? 1 : -1;
-            fireMeshes.forEach(mesh => { mesh.scale.x = fireFlip; });
+            fireMeshes.forEach(mesh => { mesh.scale.x = fireFlip; mesh.updateMatrix(); });
+
+            // Portal interior: the 16x32 png holds two 16x16 frames; scroll between
+            // them at 4 frames/sec so the portal feels alive.
+            if (materials.portal_to_hell_inside && materials.portal_to_hell_inside.map) {
+                materials.portal_to_hell_inside.map.offset.y = (Math.floor(time / 250) % 2) * 0.5;
+            }
 
             for (let i = collapsingTreesQueue.length - 1; i >= 0; i--) {
                 const tree = collapsingTreesQueue[i];
@@ -43758,7 +43781,8 @@ f 9985 	9996 	9986
                             // breaking off a hanging walnut fruit always gives you the nut
                             if (matType === 'walnut_leaves' && Math.random() < 0.30) matType = 'walnut';
                             if (matType === 'walnut_fruit') matType = 'walnut';
-                            if (matType !== 'portal_to_hell_inside') addItemToInventory(matType);
+                            // Fire can't be picked up: breaking a flame just puts it out.
+                            if (matType !== 'portal_to_hell_inside' && matType !== 'fire') addItemToInventory(matType);
                             if (litATorch) showSelectedItemName();
                             rebuildPortalsNear(gx, gy, gz);
 
@@ -43873,15 +43897,27 @@ f 9985 	9996 	9986
                 } else {
                     lavaDamageTimer = 0;
                 }
+                // Fire burns you: 1 heart per second (2 half-hearts) while touching it
+                if (checkFireTouch(player.position)) {
+                    fireDamageTimer += delta;
+                    while (fireDamageTimer >= 1) {
+                        fireDamageTimer -= 1;
+                        applyDamage(2);
+                    }
+                } else {
+                    fireDamageTimer = 0;
+                }
                 // Only lose breath while actively playing (not while a menu is open)
                 updateOxygen(delta, player.inWater && controls.isLocked);
 
                 // Hold all physics while this area's chunk data streams in, so you can
-                // never fall through an unloaded floor (e.g. right after respawning)
+                // never fall through an unloaded floor (e.g. right after respawning).
+                // Also hold physics while a dimension switch loads, otherwise the
+                // arrival teleport (24 blocks up) registers as a real lethal fall.
                 const worldStreamed = chunkDataExistsAt(player.position.x, player.position.z);
-                if (!worldStreamed) player.velocity.set(0, 0, 0);
+                if (!worldStreamed || hellLoading) player.velocity.set(0, 0, 0);
 
-                if (worldStreamed) {
+                if (worldStreamed && !hellLoading) {
                 updateHungerAndSickness(delta);
                 if (player.inWater || player.inLava) {
                     // Water's buoyancy drag (slower fall / rise than air). The jump
@@ -44027,4 +44063,3 @@ f 9985 	9996 	9986
     </script>
 </body>
 </html>
- 
